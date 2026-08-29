@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Shell from "@/components/Shell";
 import { api, severityClass, SEVERITY_COLORS } from "@/lib/api";
 import { CloudRain, MapPin, Path, Buildings, Broadcast, Lightning, ArrowLeft, ArrowClockwise, ShieldWarning } from "@phosphor-icons/react";
@@ -23,7 +23,7 @@ export default function ZoneDetail() {
     const [issuing, setIssuing] = useState(false);
     const [running, setRunning] = useState(false);
 
-    const load = async () => {
+    const load = useCallback(async () => {
         const { data } = await api.get(`/zones/${id}`);
         setZone(data);
         try {
@@ -38,8 +38,8 @@ export default function ZoneDetail() {
             });
             setExplanation(ex.data.explanation);
         }
-    };
-    useEffect(() => { load(); }, [id]);
+    }, [id]);
+    useEffect(() => { load(); }, [load]);
 
     const runPrediction = async (multiplier = 1) => {
         setRunning(true);
