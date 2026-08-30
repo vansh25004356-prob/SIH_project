@@ -5,6 +5,7 @@ const isProduction = process.env.NODE_ENV === "production";
 const config = { enableHealthCheck: process.env.ENABLE_HEALTH_CHECK === "true" };
 
 function makeDevServerV5Compatible(devServerConfig) {
+  if (!devServerConfig) return devServerConfig;
   const { https, onAfterSetupMiddleware, onBeforeSetupMiddleware, onListening, setupMiddlewares, ...compatibleConfig } = devServerConfig;
   compatibleConfig.server = typeof https === "object" ? { type: "https", options: https } : https ? "https" : "http";
   compatibleConfig.headers = { ...compatibleConfig.headers, "Cross-Origin-Resource-Policy": "same-origin" };
@@ -51,6 +52,7 @@ const webpackConfig = {
 };
 
 webpackConfig.devServer = (devServerConfig) => {
+  if (!devServerConfig) return devServerConfig;
   if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
     const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
     devServerConfig.setupMiddlewares = (middlewares, devServer) => {
@@ -59,7 +61,7 @@ webpackConfig.devServer = (devServerConfig) => {
       return middlewares;
     };
   }
-  return devServerConfig;
+  return makeDevServerV5Compatible(devServerConfig);
 };
 
 if (!isProduction) {
@@ -75,8 +77,3 @@ if (!isProduction) {
 } else {
   module.exports = webpackConfig;
 }
-
-const exportedConfig = module.exports;
-const configureDevServer = exportedConfig.devServer;
-exportedConfig.devServer = (devServerConfig) => makeDevServerV5Compatible(configureDevServer ? configureDevServer(devServerConfig) : devServerConfig);
-module.exports = exportedConfig;
