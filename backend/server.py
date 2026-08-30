@@ -23,12 +23,14 @@ from app.services.ml_service import ml_service
 from app.services import weather_service, risk_service, terrain_service
 from app.services.llm_service import explain_risk, translate_alert, SUPPORTED_LANGUAGES
 from app.db import supabase_repo as repo
+from app.auth_middleware import install_auth_middleware
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("nerslide")
 
 app = FastAPI(title="NER-SLIDE API", version="2.0.0-supabase")
 api = APIRouter(prefix="/api")
+install_auth_middleware(app)
 
 
 @app.on_event("startup")
@@ -42,9 +44,6 @@ async def shutdown() -> None:
     await repo.close()
 
 
-# ---------------------------------------------------------------------------
-# Health + model metadata
-# ---------------------------------------------------------------------------
 @api.get("/health")
 async def health() -> Dict[str, Any]:
     return {"status": "ok", "model_loaded": ml_service.model is not None, "model_version": ml_service.version,
@@ -57,9 +56,6 @@ async def model_info() -> Dict[str, Any]:
             "severity_bands": [{"label": x[0], "lo": x[1], "hi": x[2]} for x in [("LOW",0.0,0.15),("MEDIUM",0.15,0.35),("HIGH",0.35,0.65),("CRITICAL",0.65,1.01)]]}
 
 
-# ---------------------------------------------------------------------------
-# Predictions — V5 model + Supabase persistence
-# ---------------------------------------------------------------------------
 class PredictRequest(BaseModel):
     features: Dict[str, float]
 
@@ -110,15 +106,12 @@ async def run_all() -> Dict[str, Any]:
             priority = risk_service.classify_response_priority(result, zone)
             await repo.upsert_prediction(zone["zone_id"], result, priority)
             ok += 1
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             log.warning("run-all zone=%s failed=%s", zone.get("zone_id"), exc)
             failed += 1
     return {"ok": ok, "failed": failed}
 
 
-# ---------------------------------------------------------------------------
-# Zones + GIS
-# ---------------------------------------------------------------------------
 @api.get("/zones")
 async def list_zones(state: Optional[str] = None, severity: Optional[str] = None) -> List[Dict[str, Any]]:
     zones = await repo.list_zones(state)
@@ -127,8 +120,7 @@ async def list_zones(state: Optional[str] = None, severity: Optional[str] = None
     for zone in zones:
         p = predictions.get(zone["zone_id"])
         if p:
-            zone["latest"] = {"severity": p.get("severity"), "risk_score": p.get("risk_score"),
-                               "probability": p.get("probability"), "updated_at": p.get("predicted_at")}
+            zone["latest"] = {"severity": p.get("severity"), "risk_score": p.get("risk_score"), "probability": p.get("probability"), "updated_at": p.get("predicted_at")}
         if severity and (not p or p.get("severity") != severity):
             continue
         out.append(zone)
@@ -141,8 +133,7 @@ async def get_zone(zone_id: str) -> Dict[str, Any]:
     if not zone:
         raise HTTPException(status_code=404, detail="zone_not_found")
     p = await repo.get_latest_prediction(zone_id)
-    if p:
-        zone["latest"] = p
+    if p: zone["latest"] = p
     zone["sensors"] = [s for s in await repo.list_sensors() if s.get("zone_id") == zone.get("id")]
     zone["roads_nearby"] = await repo.nearest_roads(zone["centroid"]["lat"], zone["centroid"]["lon"], 3)
     zone["villages_nearby"] = await repo.nearest_villages(zone["centroid"]["lat"], zone["centroid"]["lon"], 3)
@@ -153,54 +144,38 @@ async def get_zone(zone_id: str) -> Dict[str, Any]:
 async def gis_risk_zones() -> Dict[str, Any]:
     zones = await repo.list_zones()
     predictions = {p.get("zone_id"): p for p in await repo.get_predictions()}
-    return {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": z.get("geometry"), "properties": {
-            "zone_id": z["zone_id"], "name": z["name"], "state": z["state"], "district": z["district"],
-            "severity": (predictions.get(z["zone_id"]) or {}).get("severity", "UNKNOWN"),
-            "risk_score": (predictions.get(z["zone_id"]) or {}).get("risk_score"),
-            "probability": (predictions.get(z["zone_id"]) or {}).get("probability"), "population": z.get("population")}}
-        for z in zones]}
+    return {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": z.get("geometry"), "properties": {"zone_id": z["zone_id"], "name": z["name"], "state": z["state"], "district": z["district"], "severity": (predictions.get(z["zone_id"]) or {}).get("severity", "UNKNOWN"), "risk_score": (predictions.get(z["zone_id"]) or {}).get("risk_score"), "probability": (predictions.get(z["zone_id"]) or {}).get("probability"), "population": z.get("population")}} for z in zones]}
 
 
 @api.get("/gis/heatmap")
 async def gis_heatmap() -> List[Dict[str, Any]]:
     zones = await repo.list_zones()
     predictions = {p.get("zone_id"): p for p in await repo.get_predictions()}
-    return [{"lat": z["centroid"]["lat"], "lon": z["centroid"]["lon"],
-             "intensity": float((predictions.get(z["zone_id"]) or {}).get("probability", 0.0)),
-             "zone_id": z["zone_id"], "severity": (predictions.get(z["zone_id"]) or {}).get("severity", "UNKNOWN")} for z in zones]
+    return [{"lat": z["centroid"]["lat"], "lon": z["centroid"]["lon"], "intensity": float((predictions.get(z["zone_id"]) or {}).get("probability", 0.0)), "zone_id": z["zone_id"], "severity": (predictions.get(z["zone_id"]) or {}).get("severity", "UNKNOWN")} for z in zones]
 
 
 @api.get("/gis/sensors")
 async def gis_sensors() -> Dict[str, Any]:
     sensors = await repo.list_sensors()
-    return {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [s["lon"], s["lat"]]}, "properties": s}
-        for s in sensors]}
+    return {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [s["lon"], s["lat"]]}, "properties": s} for s in sensors]}
 
 
 @api.get("/gis/roads")
 async def gis_roads() -> Dict[str, Any]:
     roads = await repo.list_roads()
-    return {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": r["geometry"], "properties": {k: v for k, v in r.items() if k != "geometry"}}
-        for r in roads]}
+    return {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": r["geometry"], "properties": {k: v for k, v in r.items() if k != "geometry"}} for r in roads]}
 
 
 @api.get("/gis/villages")
 async def gis_villages() -> Dict[str, Any]:
     villages = await repo.list_villages()
-    return {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [v["lon"], v["lat"]]}, "properties": v}
-        for v in villages]}
+    return {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [v["lon"], v["lat"]]}, "properties": v} for v in villages]}
 
 
 @api.get("/gis/reports")
 async def gis_reports() -> Dict[str, Any]:
     reports = await repo.list_reports(200)
-    return {"type": "FeatureCollection", "features": [
-        {"type": "Feature", "geometry": {"type": "Point", "coordinates": [r["lon"], r["lat"]]}, "properties": r}
-        for r in reports]}
+    return {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [r["lon"], r["lat"]]}, "properties": r} for r in reports]}
 
 
 @api.get("/gis/alerts")
@@ -213,67 +188,44 @@ async def gis_nearby(lat: float, lon: float) -> Dict[str, Any]:
     return {"roads": await repo.nearest_roads(lat, lon, 3), "villages": await repo.nearest_villages(lat, lon, 3)}
 
 
-# ---------------------------------------------------------------------------
-# Weather + terrain
-# ---------------------------------------------------------------------------
 @api.get("/weather")
-async def weather(latitude: float, longitude: float) -> Dict[str, Any]:
-    return await weather_service.get_current(latitude, longitude)
-
+async def weather(latitude: float, longitude: float) -> Dict[str, Any]: return await weather_service.get_current(latitude, longitude)
 
 @api.get("/weather/history")
-async def weather_history(latitude: float, longitude: float, days: int = 30) -> Dict[str, Any]:
-    return await weather_service.get_history(latitude, longitude, days)
-
+async def weather_history(latitude: float, longitude: float, days: int = 30) -> Dict[str, Any]: return await weather_service.get_history(latitude, longitude, days)
 
 @api.get("/terrain/elevation")
-async def terrain_elevation(latitude: float, longitude: float) -> Dict[str, Any]:
-    return await weather_service.get_elevation(latitude, longitude)
+async def terrain_elevation(latitude: float, longitude: float) -> Dict[str, Any]: return await weather_service.get_elevation(latitude, longitude)
 
 
 @api.post("/terrain/recompute")
 async def terrain_recompute(zone_id: Optional[str] = None) -> Dict[str, Any]:
     zones = [await repo.get_zone(zone_id)] if zone_id else await repo.list_zones()
     zones = [z for z in zones if z]
-    c = await repo.client()
-    ok = failed = 0
+    c = await repo.client(); ok = failed = 0
     for zone in zones:
         try:
             t = await terrain_service.compute_dem_features(zone["centroid"]["lat"], zone["centroid"]["lon"])
             await c.table("zones").update({**t, "terrain_source": "DEM"}).eq("zone_id", zone["zone_id"]).execute()
-            await c.table("terrain_data").update({**t, "source": "DEM", "fetched_at": datetime.now(timezone.utc).isoformat()}).eq("zone_id", zone["id"]).execute()
-            ok += 1
-        except Exception as exc:  # noqa: BLE001
-            log.warning("DEM recompute failed zone=%s reason=%s", zone.get("zone_id"), exc)
-            failed += 1
+            await c.table("terrain_data").update({**t, "source": "DEM", "fetched_at": datetime.now(timezone.utc).isoformat()}).eq("zone_id", zone["id"]).execute(); ok += 1
+        except Exception as exc: log.warning("DEM recompute failed zone=%s reason=%s", zone.get("zone_id"), exc); failed += 1
     return {"ok": ok, "failed": failed, "source": "OPEN_METEO_ELEVATION"}
 
 
-# ---------------------------------------------------------------------------
-# Sensors
-# ---------------------------------------------------------------------------
 @api.get("/sensors")
-async def sensors_list(status: Optional[str] = None) -> List[Dict[str, Any]]:
-    return await repo.list_sensors(status)
-
+async def sensors_list(status: Optional[str] = None) -> List[Dict[str, Any]]: return await repo.list_sensors(status)
 
 class SensorReading(BaseModel):
     sensor_id: str
     measurement_type: str
     value: float
 
-
 @api.post("/sensors/readings")
 async def post_reading(r: SensorReading) -> Dict[str, Any]:
-    try:
-        return await repo.insert_sensor_reading(r.sensor_id, r.measurement_type, r.value)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    try: return await repo.insert_sensor_reading(r.sensor_id, r.measurement_type, r.value)
+    except ValueError as exc: raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-# ---------------------------------------------------------------------------
-# Reports
-# ---------------------------------------------------------------------------
 class ReportCreate(BaseModel):
     lat: float
     lon: float
@@ -284,60 +236,42 @@ class ReportCreate(BaseModel):
     reporter_name: Optional[str] = "Anonymous"
     client_uuid: Optional[str] = None
 
-
 @api.post("/reports")
 async def create_report(r: ReportCreate) -> Dict[str, Any]:
     if r.client_uuid:
         existing = await repo.find_report_by_client_uuid(r.client_uuid)
-        if existing:
-            return existing
+        if existing: return existing
     if r.report_type == "ROAD_BLOCKAGE":
         near = await repo.nearest_roads(r.lat, r.lon, 1)
-        if near:
-            await repo.update_road_status(near[0]["road_id"], "BLOCKED")
-    zone = min(await repo.list_zones(), key=lambda z: ((z["centroid"]["lat"]-r.lat)**2 + (z["centroid"]["lon"]-r.lon)**2))
-    payload = r.model_dump()
-    result = await repo.insert_report(payload)
-    result["zone_id"] = zone["zone_id"]
-    return result
-
+        if near: await repo.update_road_status(near[0]["road_id"], "BLOCKED")
+    zones = await repo.list_zones()
+    if not zones: raise HTTPException(status_code=503, detail="no_zones_configured")
+    zone = min(zones, key=lambda z: ((z["centroid"]["lat"]-r.lat)**2 + (z["centroid"]["lon"]-r.lon)**2))
+    payload = r.model_dump(); result = await repo.insert_report(payload); result["zone_id"] = zone["zone_id"]; return result
 
 @api.get("/reports")
-async def list_reports(limit: int = 100) -> List[Dict[str, Any]]:
-    return await repo.list_reports(limit)
+async def list_reports(limit: int = 100) -> List[Dict[str, Any]]: return await repo.list_reports(limit)
 
 
-# ---------------------------------------------------------------------------
-# Alerts + notifications
-# ---------------------------------------------------------------------------
 class AlertCreate(BaseModel):
     zone_id: str
     severity: str
     reason: str
     recommended_action: str = "Evacuate at-risk slopes; halt construction; notify local authorities."
 
-
 @api.post("/alerts")
 async def create_alert(a: AlertCreate) -> Dict[str, Any]:
     zone = await repo.get_zone(a.zone_id)
-    if not zone:
-        raise HTTPException(status_code=404, detail="zone_not_found")
+    if not zone: raise HTTPException(status_code=404, detail="zone_not_found")
     text = f"{a.severity} landslide risk near {zone['name']} ({zone['district']}, {zone['state']}). Reason: {a.reason}. Action: {a.recommended_action}"
     translations = await translate_alert(text, list(SUPPORTED_LANGUAGES.keys()))
-    payload = {"zone_id": zone["id"], "severity": a.severity, "reason": a.reason,
-               "recommended_action": a.recommended_action, "translations": translations, "status": "ACTIVE"}
-    return await repo.create_alert(payload)
-
+    return await repo.create_alert({"zone_id": zone["id"], "severity": a.severity, "reason": a.reason, "recommended_action": a.recommended_action, "translations": translations, "status": "ACTIVE"})
 
 @api.get("/alerts")
-async def list_alerts(limit: int = 100) -> List[Dict[str, Any]]:
-    return await repo.list_alerts(limit)
-
+async def list_alerts(limit: int = 100) -> List[Dict[str, Any]]: return await repo.list_alerts(limit)
 
 @api.get("/notifications")
-async def list_notifications(limit: int = 200) -> List[Dict[str, Any]]:
-    return await repo.list_notifications(limit)
-
+async def list_notifications(limit: int = 200) -> List[Dict[str, Any]]: return await repo.list_notifications(limit)
 
 @api.get("/notifications/status")
 async def notification_status() -> Dict[str, Any]:
@@ -345,9 +279,6 @@ async def notification_status() -> Dict[str, Any]:
     return {"provider": "TWILIO" if configured else "LOG_ONLY", "twilio_configured": configured}
 
 
-# ---------------------------------------------------------------------------
-# Recipients
-# ---------------------------------------------------------------------------
 class RecipientCreate(BaseModel):
     name: str
     phone: str
@@ -355,63 +286,39 @@ class RecipientCreate(BaseModel):
     district: Optional[str] = None
     language: str = "en"
 
-
 @api.post("/recipients")
-async def create_recipient(r: RecipientCreate) -> Dict[str, Any]:
-    return await repo.create_recipient(r.model_dump())
-
+async def create_recipient(r: RecipientCreate) -> Dict[str, Any]: return await repo.create_recipient(r.model_dump())
 
 @api.get("/recipients")
-async def list_recipients() -> List[Dict[str, Any]]:
-    return await repo.list_recipients()
-
+async def list_recipients() -> List[Dict[str, Any]]: return await repo.list_recipients()
 
 @api.delete("/recipients/{recipient_id}")
-async def delete_recipient(recipient_id: str) -> Dict[str, Any]:
-    return {"deleted": await repo.delete_recipient(recipient_id)}
+async def delete_recipient(recipient_id: str) -> Dict[str, Any]: return {"deleted": await repo.delete_recipient(recipient_id)}
 
 
-# ---------------------------------------------------------------------------
-# Response priorities + dashboard
-# ---------------------------------------------------------------------------
 @api.get("/response/priorities")
 async def response_priorities() -> List[Dict[str, Any]]:
-    predictions = await repo.get_predictions()
-    out = []
+    predictions = await repo.get_predictions(); out = []
     for p in predictions:
         zone = await repo.get_zone(p["zone_id"])
-        if not zone:
-            continue
+        if not zone: continue
         priority = risk_service.classify_response_priority(p, zone)
-        out.append({"zone_id": p["zone_id"], "zone_name": zone["name"], "state": zone["state"], "district": zone["district"],
-                    "severity": p.get("severity"), "risk_score": p.get("risk_score"), **priority})
-    order = {"P1": 0, "P2": 1, "P3": 2, "P4": 3}
-    return sorted(out, key=lambda x: order.get(x["priority"], 9))
-
+        out.append({"zone_id": p["zone_id"], "zone_name": zone["name"], "state": zone["state"], "district": zone["district"], "severity": p.get("severity"), "risk_score": p.get("risk_score"), **priority})
+    order = {"P1":0,"P2":1,"P3":2,"P4":3}; return sorted(out, key=lambda x: order.get(x["priority"],9))
 
 @api.get("/dashboard/summary")
-async def dashboard_summary() -> Dict[str, Any]:
-    return {**await repo.dashboard_counts(), "timestamp": datetime.now(timezone.utc).isoformat()}
+async def dashboard_summary() -> Dict[str, Any]: return {**await repo.dashboard_counts(), "timestamp": datetime.now(timezone.utc).isoformat()}
 
-
-# ---------------------------------------------------------------------------
-# Explainability, satellite stub, feedback
-# ---------------------------------------------------------------------------
 class ExplainRequest(BaseModel):
     severity: str
     factors: List[Dict[str, Any]]
     zone_name: str
 
-
 @api.post("/explain")
-async def explain(req: ExplainRequest) -> Dict[str, Any]:
-    return {"explanation": await explain_risk(req.severity, req.factors, req.zone_name)}
-
+async def explain(req: ExplainRequest) -> Dict[str, Any]: return {"explanation": await explain_risk(req.severity, req.factors, req.zone_name)}
 
 @api.get("/satellite/search")
-async def satellite_search(zone_id: str) -> Dict[str, Any]:
-    return {"status": "unavailable", "reason": "Copernicus credentials not configured", "source": "COPERNICUS", "zone_id": zone_id}
-
+async def satellite_search(zone_id: str) -> Dict[str, Any]: return {"status":"unavailable","reason":"Copernicus credentials not configured","source":"COPERNICUS","zone_id":zone_id}
 
 class FeedbackReq(BaseModel):
     zone_id: str
@@ -419,13 +326,8 @@ class FeedbackReq(BaseModel):
     label: str
     notes: Optional[str] = ""
 
-
 @api.post("/model/feedback")
-async def model_feedback(f: FeedbackReq) -> Dict[str, Any]:
-    return await repo.create_feedback(f.model_dump())
+async def model_feedback(f: FeedbackReq) -> Dict[str, Any]: return await repo.create_feedback(f.model_dump())
 
-
-app.include_router(api)
-app.add_middleware(CORSMiddleware, allow_credentials=True,
-                   allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-                   allow_methods=["*"], allow_headers=["*"])
+@app.include_router(api)
+app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","), allow_methods=["*"], allow_headers=["*"])
