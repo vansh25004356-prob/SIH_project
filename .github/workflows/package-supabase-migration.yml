@@ -1,0 +1,23 @@
+name: Package Supabase Migration
+
+on:
+  push:
+    branches: [migration/supabase-phase-2]
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create ZIP backup
+        run: |
+          git archive --format=zip --output=/tmp/SIH_project-migration-supabase-phase-2.zip HEAD
+      - name: Upload ZIP backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: SIH_project-migration-supabase-phase-2
+          path: /tmp/SIH_project-migration-supabase-phase-2.zip
+          if-no-files-found: error
