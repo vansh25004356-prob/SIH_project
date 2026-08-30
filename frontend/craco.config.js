@@ -4,11 +4,23 @@ require("dotenv").config();
 const isProduction = process.env.NODE_ENV === "production";
 const config = { enableHealthCheck: process.env.ENABLE_HEALTH_CHECK === "true" };
 
-function makeDevServerV5Compatible(devServerConfig) {
+const makeDevServerV5Compatible = (devServerConfig) => {
   if (!devServerConfig) return devServerConfig;
-  const { https, onAfterSetupMiddleware, onBeforeSetupMiddleware, onListening, setupMiddlewares, ...compatibleConfig } = devServerConfig;
-  compatibleConfig.server = typeof https === "object" ? { type: "https", options: https } : https ? "https" : "http";
-  compatibleConfig.headers = { ...compatibleConfig.headers, "Cross-Origin-Resource-Policy": "same-origin" };
+  const {
+    https,
+    onAfterSetupMiddleware,
+    onBeforeSetupMiddleware,
+    onListening,
+    setupMiddlewares,
+    ...compatibleConfig
+  } = devServerConfig;
+  compatibleConfig.server = typeof https === "object"
+    ? { type: "https", options: https }
+    : https ? "https" : "http";
+  compatibleConfig.headers = {
+    ...compatibleConfig.headers,
+    "Cross-Origin-Resource-Policy": "same-origin",
+  };
   if (onBeforeSetupMiddleware || setupMiddlewares) {
     compatibleConfig.setupMiddlewares = (middlewares, devServer) => {
       if (onBeforeSetupMiddleware) onBeforeSetupMiddleware(devServer);
@@ -21,7 +33,7 @@ function makeDevServerV5Compatible(devServerConfig) {
     if (onAfterSetupMiddleware) onAfterSetupMiddleware(devServer);
   };
   return compatibleConfig;
-}
+};
 
 let setupHealthEndpoints;
 let healthPluginInstance;
@@ -51,18 +63,7 @@ const webpackConfig = {
   },
 };
 
-webpackConfig.devServer = (devServerConfig) => {
-  if (!devServerConfig) return devServerConfig;
-  if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
-    const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
-    devServerConfig.setupMiddlewares = (middlewares, devServer) => {
-      if (originalSetupMiddlewares) middlewares = originalSetupMiddlewares(middlewares, devServer);
-      setupHealthEndpoints(devServer, healthPluginInstance);
-      return middlewares;
-    };
-  }
-  return makeDevServerV5Compatible(devServerConfig);
-};
+webpackConfig.devServer = (devServerConfig) => makeDevServerV5Compatible(devServerConfig);
 
 if (!isProduction) {
   try {
@@ -72,7 +73,9 @@ if (!isProduction) {
     if (err.code === "MODULE_NOT_FOUND" && err.message.includes("@emergentbase/visual-edits/craco")) {
       console.warn("[visual-edits] visual editing disabled.");
       module.exports = webpackConfig;
-    } else throw err;
+    } else {
+      throw err;
+    }
   }
 } else {
   module.exports = webpackConfig;
