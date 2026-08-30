@@ -13,8 +13,14 @@ import Analytics from "@/pages/Analytics";
 import Public from "@/pages/Public";
 import FieldOfficer from "@/pages/FieldOfficer";
 import Recipients from "@/pages/Recipients";
+import AuthGate from "@/components/AuthGate";
 import { supabase } from "@/lib/supabaseClient";
 import { registerWebPush } from "@/lib/push";
+
+const OPS = ["ADMIN", "AUTHORITY", "FIELD_OFFICER"];
+const FIELD = ["ADMIN", "AUTHORITY", "FIELD_OFFICER"];
+const op = (element) => <AuthGate roles={OPS}>{element}</AuthGate>;
+const field = (element) => <AuthGate roles={FIELD}>{element}</AuthGate>;
 
 export default function App() {
     useEffect(() => {
@@ -24,31 +30,25 @@ export default function App() {
             if (active && data.session) registerWebPush().catch(() => {});
         };
         setup();
-        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (session) registerWebPush().catch(() => {});
-        });
+        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { if (session) registerWebPush().catch(() => {}); });
         return () => { active = false; listener.subscription.unsubscribe(); };
     }, []);
 
-    return (
-        <BrowserRouter>
-            <Routes>
-                <Route path="/" element={<Navigate to="/login" replace />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/map" element={<MapPage />} />
-                <Route path="/zones" element={<Zones />} />
-                <Route path="/zones/:id" element={<ZoneDetail />} />
-                <Route path="/sensors" element={<Sensors />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/alerts" element={<Alerts />} />
-                <Route path="/response" element={<Response />} />
-                <Route path="/analytics" element={<Analytics />} />
-                <Route path="/recipients" element={<Recipients />} />
-                <Route path="/public" element={<Public />} />
-                <Route path="/field" element={<FieldOfficer />} />
-                <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-        </BrowserRouter>
-    );
+    return <BrowserRouter><Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/dashboard" element={op(<Dashboard />)} />
+        <Route path="/map" element={op(<MapPage />)} />
+        <Route path="/zones" element={op(<Zones />)} />
+        <Route path="/zones/:id" element={op(<ZoneDetail />)} />
+        <Route path="/sensors" element={op(<Sensors />)} />
+        <Route path="/reports" element={op(<Reports />)} />
+        <Route path="/alerts" element={op(<Alerts />)} />
+        <Route path="/response" element={op(<Response />)} />
+        <Route path="/analytics" element={op(<Analytics />)} />
+        <Route path="/recipients" element={<AuthGate roles={["ADMIN", "AUTHORITY"]}><Recipients /></AuthGate>} />
+        <Route path="/public" element={<Public />} />
+        <Route path="/field" element={field(<FieldOfficer />)} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes></BrowserRouter>;
 }
