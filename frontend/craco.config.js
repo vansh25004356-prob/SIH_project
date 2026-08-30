@@ -44,6 +44,13 @@ if (config.enableHealthCheck) {
 }
 
 const webpackConfig = {
+  // Cleanly disable ESLint-during-build for production instead of relying on the
+  // DISABLE_ESLINT_PLUGIN env var, which removes ESLintWebpackPlugin from the base
+  // CRA config before craco ever sees it -- craco's own default eslint override then
+  // can't find the plugin and logs "Cannot find ESLint plugin (ESLintWebpackPlugin)."
+  // Setting `eslint.enable: false` here lets craco remove the plugin itself and log a
+  // clean "Disabled ESLint." message instead.
+  eslint: { enable: !isProduction },
   webpack: {
     alias: { "@": path.resolve(__dirname, "src") },
     configure: (cfg) => {
@@ -52,12 +59,6 @@ const webpackConfig = {
         ignored: ["**/node_modules/**", "**/.git/**", "**/build/**", "**/dist/**", "**/coverage/**", "**/public/**"],
       };
       if (config.enableHealthCheck && healthPluginInstance) cfg.plugins.push(healthPluginInstance);
-      if (isProduction && Array.isArray(cfg.plugins)) {
-        cfg.plugins = cfg.plugins.filter((plugin) => {
-          const name = plugin && plugin.constructor ? plugin.constructor.name : "";
-          return name !== "ESLintWebpackPlugin";
-        });
-      }
       return cfg;
     },
   },
@@ -78,7 +79,6 @@ if (!isProduction) {
   } catch (err) {
     if (err.code === "MODULE_NOT_FOUND" && err.message.includes("@emergentbase/visual-edits/craco")) {
       console.warn("[visual-edits] visual editing disabled.");
-      module.exports = webpackConfig;
     } else {
       throw err;
     }
