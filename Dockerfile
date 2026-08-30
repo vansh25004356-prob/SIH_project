@@ -9,7 +9,11 @@ WORKDIR /app
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --upgrade pip && pip install -r /app/backend/requirements.txt
 
+# Deliberately invalidate the backend source layer after source corrections.
+ARG BACKEND_SOURCE_REV=20260830-02
 COPY backend /app/backend
+RUN python -m py_compile /app/backend/server.py
+
 COPY model /app/model
 
 WORKDIR /app/backend
