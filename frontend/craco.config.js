@@ -78,5 +78,5 @@ if (!isProduction) {
 
 const exportedConfig = module.exports;
 const configureDevServer = exportedConfig.devServer;
-exportedConfig.devServer = (devServerConfig) => makeDevServerV5Compatible(configureDevServer(devServerConfig));
+exportedConfig.devServer = (devServerConfig) => makeDevServerV5Compatible(configureDevServer ? configureDevServer(devServerConfig) : devServerConfig);
 module.exports = exportedConfig;
