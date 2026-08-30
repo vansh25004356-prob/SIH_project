@@ -12,9 +12,18 @@ api.interceptors.request.use(async (config) => {
     return config;
 });
 
+const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+
 export const auth = {
-    signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
-    signUp: (email, password, fullName = "") => supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } }),
+    signIn: (email, password) => supabase.auth.signInWithPassword({ email: normalizeEmail(email), password }),
+    signUp: (email, password, fullName = "") => supabase.auth.signUp({
+        email: normalizeEmail(email),
+        password,
+        options: {
+            data: { full_name: fullName },
+            emailRedirectTo: window.location.origin,
+        },
+    }),
     signOut: () => supabase.auth.signOut(),
     session: () => supabase.auth.getSession(),
     user: () => supabase.auth.getUser(),
