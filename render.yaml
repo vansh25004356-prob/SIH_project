@@ -22,6 +22,8 @@ services:
         sync: false
       - key: TWILIO_FROM_NUMBER
         sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
 
   - type: web
     name: ner-slide-frontend
@@ -35,6 +37,20 @@ services:
       - key: REACT_APP_SUPABASE_ANON_KEY
         sync: false
       - key: REACT_APP_API_BASE_URL
+        sync: false
+      - key: REACT_APP_FIREBASE_API_KEY
+        sync: false
+      - key: REACT_APP_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: REACT_APP_FIREBASE_PROJECT_ID
+        sync: false
+      - key: REACT_APP_FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: REACT_APP_FIREBASE_MESSAGING_SENDER_ID
+        sync: false
+      - key: REACT_APP_FIREBASE_APP_ID
+        sync: false
+      - key: REACT_APP_FIREBASE_VAPID_KEY
         sync: false
     routes:
       - type: rewrite
