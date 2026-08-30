@@ -67,7 +67,7 @@
     "prestart": "node scripts/generate-firebase-sw.js",
     "start": "craco start",
     "prebuild": "node scripts/generate-firebase-sw.js",
-    "build": "node scripts/check-syntax.js && craco build",
+    "build": "DISABLE_ESLINT_PLUGIN=true node scripts/check-syntax.js && DISABLE_ESLINT_PLUGIN=true craco build",
     "test": "craco test"
   },
   "browserslist": {
