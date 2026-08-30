@@ -61,6 +61,12 @@ const webpackConfig = {
       return cfg;
     },
   },
+  babel: {
+    loaderOptions: {
+      babelrc: false,
+      configFile: false,
+    },
+  },
 };
 
 webpackConfig.devServer = (devServerConfig) => makeDevServerV5Compatible(devServerConfig);
