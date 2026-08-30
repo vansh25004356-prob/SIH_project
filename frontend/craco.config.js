@@ -2,7 +2,8 @@
 const path = require("path");
 require("dotenv").config();
 
-const isDevServer = process.env.NODE_ENV !== "production";
+const isProduction = process.env.NODE_ENV === "production";
+const isDevServer = !isProduction;
 
 const config = {
   enableHealthCheck: process.env.ENABLE_HEALTH_CHECK === "true",
@@ -55,27 +56,14 @@ if (config.enableHealthCheck) {
   healthPluginInstance = new WebpackHealthPlugin();
 }
 
-let webpackConfig = {
-  // CRA 5's ESLint webpack integration is disabled for production builds.
-  // ESLint is still available as a development dependency, but it must not
-  // block the production bundle on Render.
-  eslint: {
-    enable: isDevServer,
-    configure: {
-      extends: ["plugin:react-hooks/recommended"],
-      rules: {
-        "react-hooks/rules-of-hooks": "error",
-        "react-hooks/exhaustive-deps": "warn",
-      },
-    },
-  },
+const webpackConfig = {
   webpack: {
     alias: {
       "@": path.resolve(__dirname, "src"),
     },
-    configure: (webpackConfig) => {
-      webpackConfig.watchOptions = {
-        ...webpackConfig.watchOptions,
+    configure: (cfg) => {
+      cfg.watchOptions = {
+        ...cfg.watchOptions,
         ignored: [
           "**/node_modules/**",
           "**/.git/**",
@@ -87,9 +75,20 @@ let webpackConfig = {
       };
 
       if (config.enableHealthCheck && healthPluginInstance) {
-        webpackConfig.plugins.push(healthPluginInstance);
+        cfg.plugins.push(healthPluginInstance);
       }
-      return webpackConfig;
+
+      // CRA 5 may inject ESLintWebpackPlugin even when ESLint is configured
+      // off. Remove it explicitly for production builds so linting cannot
+      // break the production bundle on Render.
+      if (isProduction && Array.isArray(cfg.plugins)) {
+        cfg.plugins = cfg.plugins.filter((plugin) => {
+          const name = plugin && plugin.constructor ? plugin.constructor.name : "";
+          return name !== "ESLintWebpackPlugin";
+        });
+      }
+
+      return cfg;
     },
   },
 };
@@ -111,18 +110,22 @@ webpackConfig.devServer = (devServerConfig) => {
 if (isDevServer) {
   try {
     const { withVisualEdits } = require("@emergentbase/visual-edits/craco");
-    webpackConfig = withVisualEdits(webpackConfig);
+    module.exports = withVisualEdits(webpackConfig);
   } catch (err) {
     if (err.code === "MODULE_NOT_FOUND" && err.message.includes("@emergentbase/visual-edits/craco")) {
       console.warn("[visual-edits] @emergentbase/visual-edits not installed — visual editing disabled.");
+      module.exports = webpackConfig;
     } else {
       throw err;
     }
   }
+} else {
+  module.exports = webpackConfig;
 }
 
-const configureDevServer = webpackConfig.devServer;
-webpackConfig.devServer = (devServerConfig) =>
+const exportedConfig = module.exports;
+const configureDevServer = exportedConfig.devServer;
+exportedConfig.devServer = (devServerConfig) =>
   makeDevServerV5Compatible(configureDevServer(devServerConfig));
 
-module.exports = webpackConfig;
+module.exports = exportedConfig;
