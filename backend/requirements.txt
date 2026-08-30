@@ -20,7 +20,7 @@ dnspython==2.8.0
 ecdsa==0.19.2
 email-validator==2.3.0
 emergentintegrations==0.2.0
-execnet==2.1.1
+execnet==2.1.0
 fastapi==0.110.1
 fastuuid==0.14.0
 filelock==3.32.4
@@ -108,7 +108,7 @@ uritemplate==4.2.0
 urllib3==2.7.0
 uvicorn==0.25.0
 watchfiles==1.2.0
-websockets==16.1.1
+websockets==14.2
 yarl==1.24.5
 zipp==4.1.0
 --extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
