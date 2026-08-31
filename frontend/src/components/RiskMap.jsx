@@ -14,7 +14,6 @@ L.Icon.Default.mergeOptions({
 function FlyTo({ target }) {
     const map = useMap();
     useEffect(() => {
-        // Leaflet can calculate a zero-sized viewport when mounted inside a flex container.
         const timer = setTimeout(() => map.invalidateSize(), 100);
         if (target) map.flyTo([target.lat, target.lon], target.zoom || 10, { duration: 1.2 });
         return () => clearTimeout(timer);
@@ -50,7 +49,6 @@ export default function RiskMap({
             ];
             if (!publicMode) requests.splice(1, 0, api.get("/gis/sensors"));
 
-            // Do not let one failed GIS endpoint prevent the other layers from rendering.
             const results = await Promise.allSettled(requests);
             if (cancelled) return;
 
@@ -76,7 +74,7 @@ export default function RiskMap({
     const styleZone = (f) => {
         const sev = f.properties?.severity || "UNKNOWN";
         const color = SEVERITY_COLORS[sev] || "#6b7280";
-        return { color, weight: 1.2, fillColor: color, fillOpacity: sev === "UNKNOWN" ? 0.05 : 0.22 };
+        return { color, weight: 1.5, fillColor: color, fillOpacity: sev === "UNKNOWN" ? 0.08 : 0.28 };
     };
 
     return (
@@ -89,14 +87,14 @@ export default function RiskMap({
                 className="risk-leaflet-map"
                 style={{ height: "100%", width: "100%", minHeight: "70vh", background: "#0a0c10" }}
             >
+                {/* OpenStreetMap has no API-key requirement and avoids blank/API KEY REQUIRED tiles. */}
                 <TileLayer
-                    attribution='&copy; OpenStreetMap contributors &copy; CARTO'
-                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                    subdomains="abcd"
-                    maxZoom={20}
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    maxZoom={19}
                 />
 
-                {layers.zones && zonesFC && <GeoJSON
+                {layers.zones && zonesFC?.features?.length > 0 && <GeoJSON
                     data={zonesFC}
                     style={styleZone}
                     onEachFeature={(f, layer) => {
@@ -107,13 +105,13 @@ export default function RiskMap({
                 />}
 
                 {layers.zones && heatPts.map((h) => {
-                    if (!h?.intensity) return null;
+                    if (!h?.intensity || !Number.isFinite(Number(h.lat)) || !Number.isFinite(Number(h.lon))) return null;
                     const r = 6 + Number(h.intensity) * 22;
                     const color = SEVERITY_COLORS[h.severity] || "#6b7280";
                     return <CircleMarker key={`heat-${h.zone_id}`} center={[h.lat, h.lon]} radius={r} pathOptions={{ color, fillColor: color, fillOpacity: 0.28, weight: 0.5 }} />;
                 })}
 
-                {layers.roads && roadsFC && <GeoJSON
+                {layers.roads && roadsFC?.features?.length > 0 && <GeoJSON
                     data={roadsFC}
                     style={(f) => ({
                         color: f.properties?.status === "BLOCKED" ? "#e11d48" : f.properties?.status === "AT_RISK" ? "#d97706" : "#60a5fa",
@@ -124,7 +122,8 @@ export default function RiskMap({
                 />}
 
                 {layers.sensors && !publicMode && sensorsFC?.features?.map((f, i) => {
-                    const c = f.geometry?.coordinates || [0, 0];
+                    const c = f.geometry?.coordinates;
+                    if (!c || c.length < 2) return null;
                     const online = f.properties?.status === "ONLINE";
                     return <CircleMarker key={`sen-${i}`} center={[c[1], c[0]]} radius={4} pathOptions={{ color: online ? "#10b981" : "#6b7280", fillColor: online ? "#10b981" : "#6b7280", fillOpacity: 0.9 }}>
                         <Popup><div className="font-mono text-xs"><div className="font-bold">{f.properties?.sensor_id}</div><div>{f.properties?.type}</div><div>Status: {f.properties?.status}</div></div></Popup>
@@ -132,7 +131,8 @@ export default function RiskMap({
                 })}
 
                 {layers.villages && villagesFC?.features?.map((f, i) => {
-                    const c = f.geometry?.coordinates || [0, 0];
+                    const c = f.geometry?.coordinates;
+                    if (!c || c.length < 2) return null;
                     return <CircleMarker key={`vil-${i}`} center={[c[1], c[0]]} radius={3} pathOptions={{ color: "#f4f4f5", fillColor: "#f4f4f5", fillOpacity: 0.7, weight: 0 }}>
                         <Popup><div className="font-mono text-xs"><div className="font-bold">{f.properties?.name}</div><div>{f.properties?.state}</div><div>Pop: {f.properties?.population}</div></div></Popup>
                     </CircleMarker>;
@@ -140,7 +140,7 @@ export default function RiskMap({
 
                 {layers.reports && reports.map((r) => (
                     <CircleMarker key={`rep-${r.id}`} center={[r.lat, r.lon]} radius={6} pathOptions={{ color: "#eab308", fillColor: "#eab308", fillOpacity: 0.75, weight: 1 }}>
-                        <Popup><div className="font-mono text-xs"><div className="font-bold">{r.report_type}</div><div>{r.description}</div><div>By: {r.reporter_role}</div></div></Popup>
+                        <Popup><div className="font-mono text-xs"><div className="font-bold">{r.report_type}</div><div>{r.description}</div><div>By: {r.reporter_role}</div></Popup>
                     </CircleMarker>
                 ))}
 
