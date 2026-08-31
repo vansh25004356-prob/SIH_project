@@ -87,7 +87,6 @@ export default function RiskMap({
                 className="risk-leaflet-map"
                 style={{ height: "100%", width: "100%", minHeight: "70vh", background: "#0a0c10" }}
             >
-                {/* OpenStreetMap has no API-key requirement and avoids blank/API KEY REQUIRED tiles. */}
                 <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -104,11 +103,11 @@ export default function RiskMap({
                     }}
                 />}
 
-                {layers.zones && heatPts.map((h) => {
+                {layers.zones && heatPts.map((h, i) => {
                     if (!h?.intensity || !Number.isFinite(Number(h.lat)) || !Number.isFinite(Number(h.lon))) return null;
                     const r = 6 + Number(h.intensity) * 22;
                     const color = SEVERITY_COLORS[h.severity] || "#6b7280";
-                    return <CircleMarker key={`heat-${h.zone_id}`} center={[h.lat, h.lon]} radius={r} pathOptions={{ color, fillColor: color, fillOpacity: 0.28, weight: 0.5 }} />;
+                    return <CircleMarker key={`heat-${h.zone_id || i}`} center={[h.lat, h.lon]} radius={r} pathOptions={{ color, fillColor: color, fillOpacity: 0.28, weight: 0.5 }} />;
                 })}
 
                 {layers.roads && roadsFC?.features?.length > 0 && <GeoJSON
@@ -140,7 +139,7 @@ export default function RiskMap({
 
                 {layers.reports && reports.map((r) => (
                     <CircleMarker key={`rep-${r.id}`} center={[r.lat, r.lon]} radius={6} pathOptions={{ color: "#eab308", fillColor: "#eab308", fillOpacity: 0.75, weight: 1 }}>
-                        <Popup><div className="font-mono text-xs"><div className="font-bold">{r.report_type}</div><div>{r.description}</div><div>By: {r.reporter_role}</div></Popup>
+                        <Popup><div className="font-mono text-xs"><div className="font-bold">{r.report_type}</div><div>{r.description}</div><div>By: {r.reporter_role}</div></div></Popup>
                     </CircleMarker>
                 ))}
 
