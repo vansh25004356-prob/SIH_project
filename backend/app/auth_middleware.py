@@ -13,6 +13,7 @@ from typing import Callable
 import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
 
 PUBLIC_PATHS = {
     "/api/health", "/api/model/info", "/docs", "/openapi.json", "/redoc",
@@ -21,6 +22,24 @@ PUBLIC_PREFIXES = ("/api/public/",)
 
 
 def install_auth_middleware(app) -> None:
+    # CORS must wrap the authentication middleware so browser preflight
+    # OPTIONS requests receive CORS headers before authentication is checked.
+    configured_origins = [
+        origin.strip()
+        for origin in os.environ.get(
+            "CORS_ORIGINS",
+            "https://ner-slide-frontend-web.onrender.com,https://ner-slide-frontend-prod.onrender.com,https://ner-slide-frontend.onrender.com,http://localhost:3000",
+        ).split(",")
+        if origin.strip()
+    ]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=configured_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     @app.middleware("http")
     async def supabase_auth(request: Request, call_next: Callable):
         path = request.url.path
